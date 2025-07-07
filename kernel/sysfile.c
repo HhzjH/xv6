@@ -503,3 +503,130 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64
+sys_mmap(void)
+{
+  struct proc *p=myproc();
+  VMA *vma=0;
+  for(int i=0;i<16;i++){
+    //page_num==0代表当前的VMA可用
+    if(p->VMAs[i].page_num==0){
+      vma=&p->VMAs[i];
+      break;
+    }
+  }
+  if(!vma) return -1;
+  p->sz=PGROUNDUP(p->sz);
+  //将vma的地址设置为进程的栈顶
+  vma->addr=p->sz;
+
+  argint(1,&vma->len);
+  argint(2,&vma->prot);
+  argint(3,&vma->flags);
+  argint(4,&vma->fd);
+  argint(5,&vma->offset);
+  vma->file=p->ofile[vma->fd];
+
+  //请求有读权限但文件不可读则返回错误的地址
+  if((vma->prot&PROT_READ)&&!((vma->file)->readable)){
+    return 0xffffffffffffffff;
+  }
+  //请求有写权限但文件不可写则返回错误的地址
+  if((vma->prot&PROT_WRITE)&&!((vma->file)->writable)&&(vma->flags&MAP_SHARED)){
+    return 0xffffffffffffffff;
+  }
+  //增加文件的引用计数
+  filedup(vma->file);
+  //计算需要映射的页数
+  vma->page_num=PGROUNDUP(vma->len)/PGSIZE;
+  //增加进程的栈顶
+  p->sz+=vma->page_num*PGSIZE;
+  return vma->addr;
+}
+
+uint64
+sys_munmap(void)
+{
+  uint64 addr;
+  int len;
+  int i;
+  struct proc *p=myproc();
+  VMA *vma;
+
+  argaddr(0,&addr);
+  argint(1,&len);
+
+  for(i=0;i<16;i++){
+    vma=&p->VMAs[i];
+    //如果munmap的地址在VMA的范围内
+    if(addr>=vma->addr&&addr<vma->addr+vma->len){
+      uint64 va=addr;
+      //计算需要映射的页数
+      int npages=PGROUNDUP(len)/PGSIZE;
+      for(int j=0;j<npages;j++){
+        //如果页表项不为空
+        if(walkaddr(p->pagetable,va)!=0){
+          //如果VMA是共享的，并且有写权限，并且文件可写
+          if((vma->flags&MAP_SHARED)&&(vma->prot&PROT_WRITE)&&(vma->file)->writable){
+            int off=va-addr;
+            //计算需要写入的文件大小
+            int n=(off+PGSIZE+vma->offset>vma->file->ip->size)?vma->file->ip->size%PGSIZE:PGSIZE;
+            if(munmap_filewrite(vma->file,va,vma->offset+off,n)==-1){
+              return -1;
+            }
+          }
+          uvmunmap(p->pagetable,va,1,0);
+        }
+        va+=PGSIZE;
+      }
+      //如果munmap的地址在VMA的开始位置
+      if(addr==vma->addr){
+        vma->addr=va;
+        vma->offset+=npages*PGSIZE;
+      }
+      vma->page_num-=npages;
+      vma->len-=len;
+      //如果VMA的页数为0，则关闭文件
+      if(vma->page_num==0){
+        fileclose(vma->file);
+        vma->file=0;
+      }
+      break;
+    }
+  }
+
+  if(i==16) return -1;
+  return 0;
+}
+
+int 
+munmap_filewrite(struct file *f, uint64 addr, uint off, int n)
+{
+  int i= 0;
+  //max代表每次最大写入字节数
+  int j,max = ((MAXOPBLOCKS - 1 - 1 - 2) / 2) * BSIZE;
+  
+  while (i < n) {
+    int n1 = n - i;
+    if (n1 > max)
+      n1 = max;
+
+    begin_op();
+    ilock(f->ip);
+    //写入文件
+    j = writei(f->ip, 1, addr + i, off, n1);
+    iunlock(f->ip);
+    end_op();
+
+    //如果写入失败，则返回-1
+    if (j <= 0)
+      return -1;
+    
+    //更新偏移量和已写入字节数
+    off += j;
+    i += j;
+  }
+  
+  return n;
+}

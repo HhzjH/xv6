@@ -188,6 +188,8 @@ void            vmprint(pagetable_t);
 pte_t*          pgpte(pagetable_t, uint64);
 #endif
 
+int munmap_filewrite(struct file*,uint64,uint,int);
+
 // plic.c
 void            plicinit(void);
 void            plicinithart(void);

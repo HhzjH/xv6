@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
+#include "sleeplock.h"
+#include "file.h"
+#include "fs.h"
 
 struct cpu cpus[NCPU];
 
@@ -294,6 +298,12 @@ fork(void)
     release(&np->lock);
     return -1;
   }
+  for(int i=0;i<16;i++){
+    np->VMAs[i]=p->VMAs[i];
+    if(p->VMAs[i].file){
+      np->VMAs[i].file=filedup(p->VMAs[i].file);
+    }
+  }
   np->sz = p->sz;
 
   // copy saved user registers.
@@ -357,6 +367,32 @@ exit(int status)
       struct file *f = p->ofile[fd];
       fileclose(f);
       p->ofile[fd] = 0;
+    }
+  }
+  for(int i=0;i<16;i++){
+    //如果VMA的页数不为0，则释放VMA
+    if(p->VMAs[i].page_num!=0){
+      VMA *vma = &p->VMAs[i];
+      uint64 va = vma->addr;
+      //计算需要映射的页数
+      int npages = PGROUNDUP(vma->len) / PGSIZE;
+      for(int j = 0; j < npages; j++){
+        if(walkaddr(p->pagetable, va) != 0){
+          //如果VMA是共享的，并且有写权限，并且文件可写，则写入文件
+          if((vma->flags & MAP_SHARED) && (vma->prot & PROT_WRITE) && (vma->file)->writable){
+            int off = va - vma->addr;
+            //计算需要写入的文件大小
+            int n = (off + PGSIZE + vma->offset > vma->file->ip->size) ? vma->file->ip->size % PGSIZE : PGSIZE;
+            munmap_filewrite(vma->file, va, vma->offset + off, n);
+          }
+          uvmunmap(p->pagetable, va, 1, 0);
+        }
+        va += PGSIZE;
+      }
+      fileclose(vma->file);
+      vma->file = 0;
+      vma->page_num = 0;
+      vma->len = 0;
     }
   }
 

@@ -1,3 +1,11 @@
+#ifndef FILE_H
+#define FILE_H
+
+#define NDIRECT 12
+
+struct sleeplock;
+struct inode;
+
 struct file {
   enum { FD_NONE, FD_PIPE, FD_INODE, FD_DEVICE } type;
   int ref; // reference count
@@ -38,3 +46,5 @@ struct devsw {
 extern struct devsw devsw[];
 
 #define CONSOLE 1
+
+#endif

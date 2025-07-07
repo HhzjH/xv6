@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fs.h"
+#include "sleeplock.h"
+#include "file.h"
+#include "fcntl.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -67,7 +71,52 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+  } else if(r_scause()==13 || r_scause()==15){
+    struct proc *p = myproc();
+    uint64 va = r_stval();
+    //将地址向下对齐到页边界
+    va=PGROUNDDOWN(va);
+
+    int i;
+    for(i=0; i<16 ; i++){
+      VMA vma=p->VMAs[i];
+      if (va >= vma.addr && va < vma.addr + vma.len){
+        char* mem=kalloc();
+        memset(mem, 0, PGSIZE);
+        //设置最基本的用户可访问的权限
+        int prot = PTE_U;
+        //如果VMA有读权限，则设置读权限
+        if (vma.prot & PROT_READ)
+          prot |= PTE_R;
+        //如果VMA有写权限，则设置写权限
+        if (vma.prot & PROT_WRITE){
+          prot |= PTE_W;
+        }
+        //如果VMA没有写权限，但是是写异常，则杀死进程
+        else{
+          if(r_scause()==15){
+            setkilled(p);
+            exit(-1);
+          }
+        }
+
+        uint off= va - vma.addr + vma.offset;
+        ilock(vma.file->ip);
+        //读取文件内容到内存
+        readi(vma.file->ip,0,(uint64)mem,off,PGSIZE);
+        iunlock(vma.file->ip);
+        //映射内存到页表
+        mappages(p->pagetable,va,PGSIZE,(uint64)mem,prot);
+        break;
+      }
+    }
+    if(i==16){
+      setkilled(p);
+      exit(-1);
+    }
+  }
+  
+  else {
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
     setkilled(p);

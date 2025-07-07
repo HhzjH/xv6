@@ -1,4 +1,15 @@
 // Saved registers for kernel context switches.
+#include "defs.h"
+typedef struct{
+  uint64 addr;
+  int len;
+  int prot;
+  int flags;
+  int fd;
+  int offset;
+  struct file* file;
+  int page_num;
+}VMA;
 struct context {
   uint64 ra;
   uint64 sp;
@@ -104,4 +115,5 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  VMA VMAs[16];
 };
