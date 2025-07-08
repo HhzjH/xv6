@@ -151,7 +151,7 @@ bunpin(struct buf *b) {
   release(&bcache.lock);
 }
 
-// 新增：固定buffer，防止被LRU替换
+// 固定buffer，防止被LRU替换
 void
 bpin_buffer(struct buf *b) {
   acquire(&bcache.lock);
@@ -159,7 +159,7 @@ bpin_buffer(struct buf *b) {
   release(&bcache.lock);
 }
 
-// 新增：取消固定buffer
+// 取消固定buffer
 void
 bunpin_buffer(struct buf *b) {
   acquire(&bcache.lock);
@@ -167,15 +167,6 @@ bunpin_buffer(struct buf *b) {
   release(&bcache.lock);
 }
 
-// 新增：检查buffer是否被固定
-int
-bis_pinned(struct buf *b) {
-  int pinned;
-  acquire(&bcache.lock);
-  pinned = b->pinned;
-  release(&bcache.lock);
-  return pinned;
-}
 
 // 查找buffer cache中是否有指定dev和blockno的块，若有返回指针，否则返回0
 struct buf*

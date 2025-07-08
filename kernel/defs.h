@@ -22,8 +22,14 @@ void            bpin(struct buf*);
 void            bunpin(struct buf*);
 void            bpin_buffer(struct buf*);
 void            bunpin_buffer(struct buf*);
-int             bis_pinned(struct buf*);
 struct buf*     bfind(uint dev, uint blockno);
+
+// shared_pages.c
+void            shared_pages_init(void);
+char*           get_shared_page(uint dev, uint inum, uint offset);
+void            release_shared_page(char* pa);
+void            mark_shared_page_initialized(char* pa);
+int             is_shared_page_initialized(char* pa);
 
 // console.c
 void            consoleinit(void);

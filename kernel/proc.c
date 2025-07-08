@@ -167,7 +167,7 @@ freeproc(struct proc *p)
   p->pagetable = 0;
   p->sz = 0;
   
-  // 清理VMA buffer cache引用
+  // 清理VMA buffer cache引用和共享页引用
   for(int i = 0; i < 16; i++){
     VMA *vma = &p->VMAs[i];
     if(vma->file != 0){
@@ -180,6 +180,17 @@ freeproc(struct proc *p)
           vma->buffers[j] = 0;
         }
       }
+      
+      // 释放共享页引用
+      uint64 va = vma->addr;
+      for(int j = 0; j < vma->page_num; j++){
+        if(walkaddr(p->pagetable, va) != 0){
+          uint64 pa = walkaddr(p->pagetable, va);
+          release_shared_page((char*)pa);
+        }
+        va += PGSIZE;
+      }
+      
       // 关闭文件
       fileclose(vma->file);
       vma->file = 0;
@@ -416,6 +427,13 @@ exit(int status)
             int n = (off + PGSIZE + vma->offset > vma->file->ip->size) ? vma->file->ip->size % PGSIZE : PGSIZE;
             munmap_filewrite(vma->file, va, vma->offset + off, n);
           }
+          
+          // 释放共享页引用
+          uint64 pa = walkaddr(p->pagetable, va);
+          if(pa != 0){
+            release_shared_page((char*)pa);
+          }
+          
           uvmunmap(p->pagetable, va, 1, 0);
         }
         va += PGSIZE;

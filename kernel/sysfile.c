@@ -586,6 +586,12 @@ sys_munmap(void)
           //   vma->buffers[page_index] = 0;
           // }
           
+          // 释放共享页引用
+          uint64 pa = walkaddr(p->pagetable, va);
+          if(pa != 0){
+            release_shared_page((char*)pa);
+          }
+          
           uvmunmap(p->pagetable,va,1,0);
         }
         va+=PGSIZE;

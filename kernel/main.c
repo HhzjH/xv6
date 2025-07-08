@@ -25,6 +25,7 @@ main()
     plicinit();      // set up interrupt controller
     plicinithart();  // ask PLIC for device interrupts
     binit();         // buffer cache
+    shared_pages_init(); // shared pages system
     iinit();         // inode table
     fileinit();      // file table
     virtio_disk_init(); // emulated hard disk

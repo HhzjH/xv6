@@ -103,20 +103,28 @@ usertrap(void)
             break;
           }
         }
-        // 缺页时，分配新物理页并读取文件内容
+        // 缺页时，尝试获取共享页或分配新物理页
         uint off = va - vma.addr + vma.offset;
         struct inode *ip = vma.file->ip;
         uint page_index = (va - vma.addr) / PGSIZE;
-        char *mem = kalloc();
+        
+        // 尝试获取共享页
+        char *mem = get_shared_page(ip->dev, ip->inum, off);
         if(mem == 0){
           setkilled(p);
           exit(-1);
         }
-        memset(mem, 0, PGSIZE);
-        ilock(ip);
-        readi(ip, 0, (uint64)mem, off, PGSIZE);
-        iunlock(ip);
-        // 记录buffer cache（可选）
+        
+        // 检查页是否已经初始化
+        if(!is_shared_page_initialized(mem)) {
+          memset(mem, 0, PGSIZE);
+          ilock(ip);
+          readi(ip, 0, (uint64)mem, off, PGSIZE);
+          iunlock(ip);
+          mark_shared_page_initialized(mem);
+        }
+        
+        // 记录buffer cache
         uint fileblock = off / BSIZE;
         uint diskblock = bmap(ip, fileblock);
         struct buf *b = bfind(ip->dev, diskblock);
