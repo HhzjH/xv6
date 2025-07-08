@@ -576,6 +576,16 @@ sys_munmap(void)
               return -1;
             }
           }
+          
+          // 释放buffer cache引用
+          // uint page_index = (va - vma->addr) / PGSIZE;
+          // if(vma->buffers[page_index] != 0){
+          //   struct buf *b = vma->buffers[page_index];
+          //   bunpin(b);  // 减少引用计数
+          //   bunpin_buffer(b);  // 取消固定
+          //   vma->buffers[page_index] = 0;
+          // }
+          
           uvmunmap(p->pagetable,va,1,0);
         }
         va+=PGSIZE;

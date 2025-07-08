@@ -9,6 +9,7 @@ typedef struct{
   int offset;
   struct file* file;
   int page_num;
+  struct buf* buffers[16];  // 存储每个页面对应的buffer cache块，最多16页
 }VMA;
 struct context {
   uint64 ra;

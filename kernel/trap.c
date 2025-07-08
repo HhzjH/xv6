@@ -3,12 +3,15 @@
 #include "memlayout.h"
 #include "riscv.h"
 #include "spinlock.h"
+#include "sleeplock.h"
+#include "buf.h"
 #include "proc.h"
 #include "defs.h"
 #include "fs.h"
-#include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+
+extern struct proc proc[NPROC];
 
 struct spinlock tickslock;
 uint ticks;
@@ -74,39 +77,57 @@ usertrap(void)
   } else if(r_scause()==13 || r_scause()==15){
     struct proc *p = myproc();
     uint64 va = r_stval();
-    //将地址向下对齐到页边界
     va=PGROUNDDOWN(va);
 
     int i;
     for(i=0; i<16 ; i++){
       VMA vma=p->VMAs[i];
       if (va >= vma.addr && va < vma.addr + vma.len){
-        char* mem=kalloc();
-        memset(mem, 0, PGSIZE);
-        //设置最基本的用户可访问的权限
-        int prot = PTE_U;
-        //如果VMA有读权限，则设置读权限
-        if (vma.prot & PROT_READ)
-          prot |= PTE_R;
-        //如果VMA有写权限，则设置写权限
-        if (vma.prot & PROT_WRITE){
-          prot |= PTE_W;
+        // 写异常处理：COW
+        if(r_scause() == 15 && !(vma.prot & PROT_WRITE)){
+          setkilled(p);
+          exit(-1);
         }
-        //如果VMA没有写权限，但是是写异常，则杀死进程
-        else{
-          if(r_scause()==15){
-            setkilled(p);
-            exit(-1);
+        if(r_scause() == 15) {
+          pte_t *pte = walk(p->pagetable, va, 0);
+          if(pte && (*pte & PTE_V) && !(*pte & PTE_W) && (vma.prot & PROT_WRITE)) {
+            char *newmem = kalloc();
+            if(newmem == 0){
+              setkilled(p);
+              exit(-1);
+            }
+            memmove(newmem, (void*)PTE2PA(*pte), PGSIZE);
+            uvmunmap(p->pagetable, va, 1, 0);
+            int prot = PTE_U|PTE_R|PTE_W;
+            mappages(p->pagetable, va, PGSIZE, (uint64)newmem, prot);
+            break;
           }
         }
-
-        uint off= va - vma.addr + vma.offset;
-        ilock(vma.file->ip);
-        //读取文件内容到内存
-        readi(vma.file->ip,0,(uint64)mem,off,PGSIZE);
-        iunlock(vma.file->ip);
-        //映射内存到页表
-        mappages(p->pagetable,va,PGSIZE,(uint64)mem,prot);
+        // 缺页时，分配新物理页并读取文件内容
+        uint off = va - vma.addr + vma.offset;
+        struct inode *ip = vma.file->ip;
+        uint page_index = (va - vma.addr) / PGSIZE;
+        char *mem = kalloc();
+        if(mem == 0){
+          setkilled(p);
+          exit(-1);
+        }
+        memset(mem, 0, PGSIZE);
+        ilock(ip);
+        readi(ip, 0, (uint64)mem, off, PGSIZE);
+        iunlock(ip);
+        // 记录buffer cache（可选）
+        uint fileblock = off / BSIZE;
+        uint diskblock = bmap(ip, fileblock);
+        struct buf *b = bfind(ip->dev, diskblock);
+        if (b) {
+            bpin_buffer(b);
+            bpin(b);
+            vma.buffers[page_index] = b;
+        }
+        int prot = PTE_U|PTE_R;
+        if (vma.prot & PROT_WRITE) prot |= PTE_W;
+        mappages(p->pagetable, va, PGSIZE, (uint64)mem, prot);
         break;
       }
     }

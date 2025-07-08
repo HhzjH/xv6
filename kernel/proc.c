@@ -166,6 +166,27 @@ freeproc(struct proc *p)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
   p->sz = 0;
+  
+  // 清理VMA buffer cache引用
+  for(int i = 0; i < 16; i++){
+    VMA *vma = &p->VMAs[i];
+    if(vma->file != 0){
+      // 释放所有buffer cache引用
+      for(int j = 0; j < 16; j++){
+        if(vma->buffers[j] != 0){
+          struct buf *b = vma->buffers[j];
+          bunpin(b);  // 减少引用计数
+          bunpin_buffer(b);  // 取消固定
+          vma->buffers[j] = 0;
+        }
+      }
+      // 关闭文件
+      fileclose(vma->file);
+      vma->file = 0;
+    }
+    vma->page_num = 0;
+  }
+  
   p->pid = 0;
   p->parent = 0;
   p->name[0] = 0;
@@ -302,6 +323,16 @@ fork(void)
     np->VMAs[i]=p->VMAs[i];
     if(p->VMAs[i].file){
       np->VMAs[i].file=filedup(p->VMAs[i].file);
+      // 复制buffer cache引用并增加引用计数
+      for(int j = 0; j < 16; j++){
+        if(p->VMAs[i].buffers[j] != 0){
+          struct buf *b = p->VMAs[i].buffers[j];
+          np->VMAs[i].buffers[j] = b;
+          bpin(b);  // 为子进程增加引用计数
+        } else {
+          np->VMAs[i].buffers[j] = 0;
+        }
+      }
     }
   }
   np->sz = p->sz;

@@ -1,9 +1,13 @@
+#ifndef XV6_FS_H
+#define XV6_FS_H
+
+struct inode;
 // On-disk file system format.
 // Both the kernel and user programs use this header file.
 
 
 #define ROOTINO  1   // root i-number
-#define BSIZE 1024  // block size
+#define BSIZE 1024  // block size - 暂时保持原值以确保兼容性
 
 // Disk layout:
 // [ boot block | super block | log | inode blocks |
@@ -57,4 +61,8 @@ struct dirent {
   ushort inum;
   char name[DIRSIZ];
 };
+
+uint bmap(struct inode *ip, uint bn);
+
+#endif // XV6_FS_H
 

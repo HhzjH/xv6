@@ -47,6 +47,7 @@ binit(void)
     b->next = bcache.head.next;
     b->prev = &bcache.head;
     initsleeplock(&b->lock, "buffer");
+    b->pinned = 0;
     bcache.head.next->prev = b;
     bcache.head.next = b;
   }
@@ -75,7 +76,7 @@ bget(uint dev, uint blockno)
   // Not cached.
   // Recycle the least recently used (LRU) unused buffer.
   for(b = bcache.head.prev; b != &bcache.head; b = b->prev){
-    if(b->refcnt == 0) {
+    if(b->refcnt == 0 && !b->pinned) {
       b->dev = dev;
       b->blockno = blockno;
       b->valid = 0;
@@ -148,6 +149,47 @@ bunpin(struct buf *b) {
   acquire(&bcache.lock);
   b->refcnt--;
   release(&bcache.lock);
+}
+
+// 新增：固定buffer，防止被LRU替换
+void
+bpin_buffer(struct buf *b) {
+  acquire(&bcache.lock);
+  b->pinned = 1;
+  release(&bcache.lock);
+}
+
+// 新增：取消固定buffer
+void
+bunpin_buffer(struct buf *b) {
+  acquire(&bcache.lock);
+  b->pinned = 0;
+  release(&bcache.lock);
+}
+
+// 新增：检查buffer是否被固定
+int
+bis_pinned(struct buf *b) {
+  int pinned;
+  acquire(&bcache.lock);
+  pinned = b->pinned;
+  release(&bcache.lock);
+  return pinned;
+}
+
+// 查找buffer cache中是否有指定dev和blockno的块，若有返回指针，否则返回0
+struct buf*
+bfind(uint dev, uint blockno) {
+  struct buf *b;
+  acquire(&bcache.lock);
+  for(b = bcache.head.next; b != &bcache.head; b = b->next){
+    if(b->dev == dev && b->blockno == blockno){
+      release(&bcache.lock);
+      return b;
+    }
+  }
+  release(&bcache.lock);
+  return 0;
 }
 
 

@@ -20,6 +20,10 @@ void            brelse(struct buf*);
 void            bwrite(struct buf*);
 void            bpin(struct buf*);
 void            bunpin(struct buf*);
+void            bpin_buffer(struct buf*);
+void            bunpin_buffer(struct buf*);
+int             bis_pinned(struct buf*);
+struct buf*     bfind(uint dev, uint blockno);
 
 // console.c
 void            consoleinit(void);
